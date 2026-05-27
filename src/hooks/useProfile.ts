@@ -1,5 +1,6 @@
 import { apiGet, apiJson } from '../api/client';
 import { useApiState } from './useApiState';
+import { useAuth } from '../auth/useAuth';
 import type { UserProfile } from '../types';
 
 type ProfileResponse = {
@@ -8,26 +9,32 @@ type ProfileResponse = {
 };
 
 export function useProfile() {
+  const { user } = useAuth();
+
   const state = useApiState(async () => {
     try {
       const response = await apiGet<ProfileResponse>('/profile');
       return response.data;
     } catch {
+      const name = (user?.user_metadata?.full_name as string | undefined)
+        ?? user?.email?.split('@')[0]
+        ?? 'User';
+      const email = user?.email ?? '';
       return {
-        id: 'user_01',
-        name: 'Alex Rivera',
-        email: 'alex.rivera@email.com',
-        phone: '+1 (555) 234-7890',
-        location: 'San Francisco, CA',
-        linkedin: 'linkedin.com/in/alexrivera',
-        github: 'github.com/alexrivera',
-        portfolio: 'alexrivera.dev',
-        workAuthorization: 'US Citizen',
-        yearsExperience: 5,
+        id: user?.id ?? 'user_01',
+        name,
+        email,
+        phone: '',
+        location: '',
+        linkedin: '',
+        github: '',
+        portfolio: '',
+        workAuthorization: '',
+        yearsExperience: 0,
         onboardingDone: true,
       } satisfies UserProfile;
     }
-  });
+  }, [user?.id]);
 
   return state;
 }

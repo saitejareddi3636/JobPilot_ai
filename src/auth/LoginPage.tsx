@@ -4,7 +4,6 @@ import { toast } from 'sonner';
 import { Loader2, Zap } from 'lucide-react';
 import { useAuth } from './useAuth';
 
-// Official Google "G" logo — no external image dependency
 function GoogleLogo() {
   return (
     <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0" aria-hidden="true">
@@ -19,22 +18,21 @@ function GoogleLogo() {
 type Mode = 'signin' | 'signup';
 
 export default function LoginPage() {
-  const navigate   = useNavigate();
-  const location   = useLocation();
+  const navigate  = useNavigate();
+  const location  = useLocation();
   const { signInWithGoogle, signInWithPassword, signUp } = useAuth();
 
   const defaultMode: Mode = location.pathname === '/register' ? 'signup' : 'signin';
-  const [mode, setMode]       = useState<Mode>(defaultMode);
-  const [email, setEmail]     = useState('');
+  const [mode, setMode]         = useState<Mode>(defaultMode);
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [busy, setBusy]       = useState(false);
+  const [busy, setBusy]         = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
 
   async function handleGoogle() {
     setGoogleBusy(true);
     try {
       await signInWithGoogle();
-      // With real Supabase: page redirects to Google. In demo mode: redirect to dashboard.
       navigate('/', { replace: true });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Google sign-in failed');
@@ -48,7 +46,7 @@ export default function LoginPage() {
     try {
       if (mode === 'signin') {
         await signInWithPassword(email.trim(), password);
-        toast.success('Signed in');
+        toast.success('Signed in successfully');
       } else {
         await signUp(email.trim(), password);
         toast.success('Account created — check your email to confirm');
@@ -74,93 +72,107 @@ export default function LoginPage() {
             <h1 className="text-xl font-bold text-slate-900 tracking-tight">
               JobPilot<span className="text-violet-600"> AI</span>
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              {mode === 'signin' ? 'Sign in to your account' : 'Create your free account'}
-            </p>
+            <p className="text-sm text-slate-500 mt-0.5">Apply smarter, land faster</p>
           </div>
         </div>
 
         {/* Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-5">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
 
-          {/* Google button — primary CTA */}
-          <button
-            type="button"
-            onClick={handleGoogle}
-            disabled={googleBusy || busy}
-            className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:bg-slate-100 transition-all disabled:opacity-60 shadow-sm"
-          >
-            {googleBusy
-              ? <Loader2 size={18} className="animate-spin text-slate-400" />
-              : <GoogleLogo />}
-            <span>{googleBusy ? 'Redirecting…' : 'Continue with Google'}</span>
-          </button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-slate-100" />
-            <span className="text-xs text-slate-400 font-medium">or</span>
-            <div className="flex-1 h-px bg-slate-100" />
+          {/* Mode tabs */}
+          <div className="grid grid-cols-2 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={() => setMode('signin')}
+              className={`py-3 text-sm font-semibold transition-colors ${
+                mode === 'signin'
+                  ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50/50'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Sign in
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('signup')}
+              className={`py-3 text-sm font-semibold transition-colors ${
+                mode === 'signup'
+                  ? 'text-violet-600 border-b-2 border-violet-600 bg-violet-50/50'
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              Create account
+            </button>
           </div>
 
-          {/* Email / password form */}
-          <form onSubmit={handleEmailForm} className="space-y-3">
-            <label className="block space-y-1.5">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</span>
-              <input
-                type="email"
-                autoComplete="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                placeholder="you@email.com"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-shadow"
-              />
-            </label>
+          <div className="p-6 space-y-5">
 
-            <label className="block space-y-1.5">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Password</span>
-              <input
-                type="password"
-                autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                minLength={6}
-                placeholder="••••••••"
-                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-shadow"
-              />
-            </label>
-
+            {/* Google button */}
             <button
-              type="submit"
-              disabled={busy || googleBusy}
-              className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 active:bg-violet-800 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+              type="button"
+              onClick={handleGoogle}
+              disabled={googleBusy || busy}
+              className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:bg-slate-100 transition-all disabled:opacity-60 shadow-sm"
             >
-              {busy && <Loader2 size={15} className="animate-spin" />}
-              {mode === 'signin' ? (busy ? 'Signing in…' : 'Sign in') : (busy ? 'Creating account…' : 'Create account')}
+              {googleBusy
+                ? <Loader2 size={18} className="animate-spin text-slate-400" />
+                : <GoogleLogo />}
+              <span>
+                {googleBusy
+                  ? 'Redirecting…'
+                  : mode === 'signin' ? 'Continue with Google' : 'Sign up with Google'}
+              </span>
             </button>
-          </form>
-        </div>
 
-        {/* Toggle sign-in / sign-up */}
-        <p className="text-center text-sm text-slate-500">
-          {mode === 'signin' ? (
-            <>
-              Don't have an account?{' '}
-              <button onClick={() => setMode('signup')} className="text-violet-600 font-semibold hover:underline">
-                Sign up free
+            {/* Divider */}
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-px bg-slate-100" />
+              <span className="text-xs text-slate-400 font-medium">or</span>
+              <div className="flex-1 h-px bg-slate-100" />
+            </div>
+
+            {/* Email / password form */}
+            <form onSubmit={handleEmailForm} className="space-y-3">
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Email</span>
+                <input
+                  type="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  required
+                  placeholder="you@email.com"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-shadow"
+                />
+              </label>
+
+              <label className="block space-y-1.5">
+                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Password</span>
+                <input
+                  type="password"
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 transition-shadow"
+                />
+              </label>
+
+              <button
+                type="submit"
+                disabled={busy || googleBusy}
+                className="w-full rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 active:bg-violet-800 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+              >
+                {busy && <Loader2 size={15} className="animate-spin" />}
+                {mode === 'signin'
+                  ? (busy ? 'Signing in…' : 'Sign in with email')
+                  : (busy ? 'Creating account…' : 'Create account')}
               </button>
-            </>
-          ) : (
-            <>
-              Already have an account?{' '}
-              <button onClick={() => setMode('signin')} className="text-violet-600 font-semibold hover:underline">
-                Sign in
-              </button>
-            </>
-          )}
-        </p>
+            </form>
+          </div>
+        </div>
 
         <p className="text-center text-[11px] text-slate-400">
           By continuing you agree to our Terms of Service and Privacy Policy.
