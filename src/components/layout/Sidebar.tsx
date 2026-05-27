@@ -27,8 +27,9 @@ const navItems = [
 
 export function Sidebar() {
   const profileState = useProfile();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const profile = profileState.data ?? mockProfile;
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined;
 
   return (
     <aside className="w-60 h-screen sticky top-0 flex flex-col bg-white border-r border-slate-200 shrink-0">
@@ -85,9 +86,13 @@ export function Sidebar() {
           </div>
         ) : (
           <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-slate-50 transition-colors">
-            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              {profile.name.split(' ').map(n => n[0]).join('')}
-            </div>
+            {avatarUrl ? (
+              <img src={avatarUrl} alt={profile.name} className="w-8 h-8 rounded-full shrink-0 object-cover" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                {profile.name.split(' ').map(n => n[0]).join('')}
+              </div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-xs font-semibold text-slate-900 truncate">{profile.name}</p>
               <p className="text-[11px] text-slate-500 truncate">{profile.email}</p>

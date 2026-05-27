@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider } from './auth/AuthProvider';
 import LoginPage from './auth/LoginPage';
+import AuthCallback from './auth/AuthCallback';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { Layout } from './components/layout/Layout';
 import Dashboard from './pages/Dashboard';
@@ -30,6 +31,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<LoginPage />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route
               path="/onboarding"
               element={(
