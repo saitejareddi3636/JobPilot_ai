@@ -2,16 +2,25 @@
   "manifest_version": 3,
   "name": "JobPilot AI",
   "version": "1.0.0",
-  "description": "Fill job applications faster with AI-powered autofill",
+  "description": "Fill job application forms instantly with your saved profile",
   "action": {
     "default_popup": "popup.html",
     "default_title": "JobPilot AI"
   },
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
-    "https://*/*"
+    "https://*/*",
+    "http://*/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
   ]
 }

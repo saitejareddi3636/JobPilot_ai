@@ -3,7 +3,7 @@ import { resolve } from 'path';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-const root = resolve(__dirname, 'extension');
+const root   = resolve(__dirname, 'extension');
 const outDir = resolve(__dirname, 'dist-extension');
 
 function copyManifestPlugin() {
@@ -17,7 +17,6 @@ function copyManifestPlugin() {
 
 export default defineConfig({
   plugins: [react(), copyManifestPlugin()],
-  // Setting root to the extension folder makes popup.html output at the root of outDir
   root,
   publicDir: false,
   build: {
@@ -25,7 +24,14 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        popup: resolve(root, 'popup.html'),
+        popup:   resolve(root, 'popup.html'),
+        content: resolve(root, 'content.ts'),
+      },
+      output: {
+        // content script must be a plain IIFE, not an ES module
+        entryFileNames: chunk =>
+          chunk.name === 'content' ? 'content.js' : 'assets/[name]-[hash].js',
+        format: 'es',
       },
     },
   },
