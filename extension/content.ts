@@ -3,10 +3,40 @@
 import { matchField } from './fieldMatcher';
 import type { Profile, FieldContext } from './fieldMatcher';
 
+const LOG = (...args: unknown[]) => console.log('[JobPilot]', ...args);
+
+// ─── Migrate old profile shape (name/location → firstName/lastName/city/state) ─
+
+function migrateProfile(raw: Record<string, unknown>): Profile {
+  // If old shape (had a single "name" field), split it
+  const legacyName = typeof raw.name === 'string' ? raw.name : '';
+  const legacyLocation = typeof raw.location === 'string' ? raw.location : '';
+  const parts = legacyName.trim().split(/\s+/);
+
+  return {
+    firstName:         typeof raw.firstName === 'string' ? raw.firstName : parts[0] ?? '',
+    lastName:          typeof raw.lastName  === 'string' ? raw.lastName  : parts.slice(1).join(' ') ?? '',
+    email:             typeof raw.email     === 'string' ? raw.email     : '',
+    phone:             typeof raw.phone     === 'string' ? raw.phone     : '',
+    city:              typeof raw.city      === 'string' ? raw.city      : legacyLocation.split(',')[0]?.trim() ?? '',
+    state:             typeof raw.state     === 'string' ? raw.state     : legacyLocation.split(',')[1]?.trim() ?? '',
+    zipCode:           typeof raw.zipCode   === 'string' ? raw.zipCode   : '',
+    country:           typeof raw.country   === 'string' ? raw.country   : 'United States',
+    currentTitle:      typeof raw.currentTitle      === 'string' ? raw.currentTitle      : '',
+    yearsExperience:   typeof raw.yearsExperience   === 'number' ? raw.yearsExperience   : 0,
+    workAuthorization: typeof raw.workAuthorization === 'string' ? raw.workAuthorization : '',
+    salaryExpectation: typeof raw.salaryExpectation === 'string' ? raw.salaryExpectation : '',
+    noticePeriod:      typeof raw.noticePeriod      === 'string' ? raw.noticePeriod      : '',
+    linkedin:          typeof raw.linkedin  === 'string' ? raw.linkedin  : '',
+    github:            typeof raw.github    === 'string' ? raw.github    : '',
+    portfolio:         typeof raw.portfolio === 'string' ? raw.portfolio : '',
+    twitter:           typeof raw.twitter   === 'string' ? raw.twitter   : '',
+  };
+}
+
 // ─── Collect all context signals for an input ─────────────────────────────────
 
 function buildContext(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): FieldContext {
-  // Walk up to find the nearest label that is NOT an ancestor of this input
   function findLabelText(): string {
     // 1. <label for="id">
     if (el.id) {
@@ -14,27 +44,30 @@ function buildContext(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEle
       if (linked?.textContent?.trim()) return linked.textContent.trim();
     }
 
-    // 2. aria-labelledby → referenced element text
+    // 2. aria-labelledby
     const lbId = el.getAttribute('aria-labelledby');
     if (lbId) {
-      const texts = lbId.split(/\s+/).map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean);
+      const texts = lbId.split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent?.trim())
+        .filter(Boolean);
       if (texts.length) return texts.join(' ');
     }
 
-    // 3. Walk up DOM — find first label/legend/heading that is a sibling or parent-container descendant
+    // 3. Walk up DOM — find a label/legend that is NOT an ancestor of the input
     let node: Element | null = el.parentElement;
     for (let depth = 0; depth < 8 && node; depth++) {
       const candidates = Array.from(
         node.querySelectorAll('label, legend, [class*="label" i], [class*="Label"]'),
-      ).filter(candidate => !candidate.contains(el));
+      ).filter(c => !c.contains(el) && c.textContent?.trim());
 
       if (candidates.length > 0) {
-        return candidates[candidates.length - 1].textContent?.trim() ?? '';
+        // Prefer the LAST candidate (closest to input in source order)
+        return candidates[candidates.length - 1].textContent!.trim();
       }
       node = node.parentElement;
     }
 
-    // 4. Immediately preceding sibling text node or element
+    // 4. Previous sibling
     const prev = el.previousElementSibling;
     if (prev?.textContent?.trim()) return prev.textContent.trim();
 
@@ -64,42 +97,50 @@ function fillElement(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElem
   if (setter) setter.call(el, value);
   else el.value = value;
 
-  ['input', 'change', 'keyup', 'blur'].forEach(type =>
-    el.dispatchEvent(new Event(type, { bubbles: true })),
-  );
+  el.dispatchEvent(new Event('input',  { bubbles: true }));
+  el.dispatchEvent(new Event('change', { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('blur',  { bubbles: true }));
+}
+
+// ─── Selector (deduped) ───────────────────────────────────────────────────────
+
+const SEL = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=image]), textarea, select';
+
+function getFields() {
+  const seen = new Set<Element>();
+  return Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL),
+  ).filter(el => {
+    if (seen.has(el)) return false;
+    seen.add(el);
+    return !el.disabled && !(el as HTMLInputElement).readOnly;
+  });
 }
 
 // ─── Fill / detect ────────────────────────────────────────────────────────────
 
-const SEL = [
-  'input:not([type=hidden]):not([type=submit]):not([type=button])',
-  'input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=image])',
-  'textarea',
-  'select',
-].join(', ');
-
-// Deduplicate selector — querySelectorAll with comma selectors can return dupes
-function getFields(root: Document | Element = document) {
-  const seen = new Set<Element>();
-  return Array.from(root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))
-    .filter(el => {
-      if (seen.has(el)) return false;
-      seen.add(el);
-      return !el.disabled && !(el as HTMLInputElement).readOnly;
-    });
-}
-
 function fillForm(profile: Profile): number {
+  const fields = getFields();
+  LOG(`Found ${fields.length} total input elements on page`);
+
   let filled = 0;
-  for (const el of getFields()) {
-    const value = matchField(buildContext(el), profile);
+  for (const el of fields) {
+    const ctx = buildContext(el);
+    const value = matchField(ctx, profile);
+
+    LOG(`Field: name="${ctx.name}" id="${ctx.id}" label="${ctx.labelText}" aria="${ctx.ariaLabel}" placeholder="${ctx.placeholder}" → ${value ?? 'NO MATCH'}`);
+
     if (!value) continue;
+
     fillElement(el, value);
     el.style.outline       = '2px solid #7c3aed';
     el.style.outlineOffset = '2px';
     el.style.borderRadius  = '4px';
     filled++;
   }
+
+  LOG(`Filled ${filled}/${fields.length} fields`);
   return filled;
 }
 
@@ -112,16 +153,28 @@ function detectFields(profile: Profile): number {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'DETECT_FIELDS') {
     chrome.storage.local.get('jobpilot_profile', ({ jobpilot_profile }) => {
-      if (!jobpilot_profile) { sendResponse({ count: 0 }); return; }
-      sendResponse({ count: detectFields(jobpilot_profile as Profile) });
+      if (!jobpilot_profile) {
+        LOG('No profile saved in chrome.storage');
+        sendResponse({ count: 0 });
+        return;
+      }
+      const profile = migrateProfile(jobpilot_profile as Record<string, unknown>);
+      LOG('Profile loaded:', profile);
+      sendResponse({ count: detectFields(profile) });
     });
     return true;
   }
 
   if (msg.type === 'FILL_FORM') {
     chrome.storage.local.get('jobpilot_profile', ({ jobpilot_profile }) => {
-      if (!jobpilot_profile) { sendResponse({ ok: false }); return; }
-      const filled = fillForm(jobpilot_profile as Profile);
+      if (!jobpilot_profile) {
+        LOG('No profile — cannot fill');
+        sendResponse({ ok: false });
+        return;
+      }
+      const profile = migrateProfile(jobpilot_profile as Record<string, unknown>);
+      LOG('Filling with profile:', profile);
+      const filled = fillForm(profile);
       sendResponse({ ok: true, filled });
     });
     return true;
