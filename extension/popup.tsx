@@ -79,15 +79,34 @@ function App() {
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [draft, loading]);
 
+  // Inject content script if not already present, then send a message
+  function sendToTab(tabId: number, msg: object, cb: (res: Record<string, unknown>) => void) {
+    chrome.tabs.sendMessage(tabId, msg, res => {
+      if (!chrome.runtime.lastError) { cb(res as Record<string, unknown>); return; }
+      // Content script missing — inject it, then retry once
+      chrome.scripting.executeScript(
+        { target: { tabId, allFrames: true }, files: ['content.js'] },
+        () => {
+          if (chrome.runtime.lastError) { cb({}); return; }
+          setTimeout(() => {
+            chrome.tabs.sendMessage(tabId, msg, res2 => {
+              if (chrome.runtime.lastError) { cb({}); return; }
+              cb(res2 as Record<string, unknown>);
+            });
+          }, 300);
+        },
+      );
+    });
+  }
+
   // Detect fields when profile exists
   useEffect(() => {
     if (!profile) return;
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const id = tabs[0]?.id;
       if (!id) return;
-      chrome.tabs.sendMessage(id, { type: 'DETECT_FIELDS' }, res => {
-        if (chrome.runtime.lastError) return;
-        setFieldCount((res as { count: number })?.count ?? 0);
+      sendToTab(id, { type: 'DETECT_FIELDS' }, res => {
+        setFieldCount((res?.count as number) ?? 0);
       });
     });
   }, [profile]);
@@ -106,15 +125,15 @@ function App() {
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       const id = tabs[0]?.id;
       if (!id) { setFillStatus('error'); return; }
-      chrome.tabs.sendMessage(id, { type: 'FILL_FORM' }, res => {
-        if (chrome.runtime.lastError || !res?.ok) { setFillStatus('error'); return; }
-        setFillResult({ filled: res.filled as number });
+      sendToTab(id, { type: 'FILL_FORM' }, res => {
+        if (!res?.ok) { setFillStatus('error'); return; }
+        const filled = (res.filled as number) ?? 0;
+        setFillResult({ filled });
         setFillStatus('done');
-        // log to history
         chrome.storage.local.get('jobpilot_history', ({ jobpilot_history }) => {
           const history = (jobpilot_history as Array<{ url: string; filled: number; ts: number }>) ?? [];
           chrome.tabs.query({ active: true, currentWindow: true }, t => {
-            history.unshift({ url: t[0]?.url ?? '', filled: res.filled as number, ts: Date.now() });
+            history.unshift({ url: t[0]?.url ?? '', filled, ts: Date.now() });
             chrome.storage.local.set({ jobpilot_history: history.slice(0, 20) });
           });
         });

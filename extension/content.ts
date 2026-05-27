@@ -24,15 +24,36 @@ interface Profile {
 // ─── Field matching ───────────────────────────────────────────────────────────
 
 function getFieldValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, p: Profile): string | null {
+  // Walk up the DOM to find the closest label text (handles Ashby, Greenhouse, Lever)
+  function nearestLabel(node: Element): string {
+    let cur: Element | null = node;
+    for (let i = 0; i < 6; i++) {
+      if (!cur) break;
+      const label = cur.querySelector('label, [class*="label"], [class*="Label"]');
+      if (label?.textContent) return label.textContent;
+      cur = cur.parentElement;
+    }
+    // Also check for a <label for="id"> pointing at this element
+    if (el.id) {
+      const linked = document.querySelector(`label[for="${el.id}"]`);
+      if (linked?.textContent) return linked.textContent;
+    }
+    return '';
+  }
+
   const ctx = [
     el.name,
     el.id,
     el.getAttribute('autocomplete') ?? '',
     el.getAttribute('placeholder') ?? '',
     el.getAttribute('aria-label') ?? '',
-    el.closest('label')?.textContent ?? '',
-    el.closest('[class*="field"], [class*="form-group"], [class*="input-group"]')?.querySelector('label, [class*="label"]')?.textContent ?? '',
+    el.getAttribute('aria-labelledby')
+      ? document.getElementById(el.getAttribute('aria-labelledby')!)?.textContent ?? ''
+      : '',
+    nearestLabel(el),
     el.getAttribute('data-field-type') ?? '',
+    el.getAttribute('data-qa') ?? '',
+    el.getAttribute('data-testid') ?? '',
   ].join(' ').toLowerCase();
 
   const fullName = `${p.firstName} ${p.lastName}`.trim();
