@@ -38,7 +38,7 @@ function migrateProfile(raw: Record<string, unknown>): Profile {
 
 function buildContext(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): FieldContext {
   function findLabelText(): string {
-    // 1. <label for="id">
+    // 1. <label for="id"> — most explicit signal
     if (el.id) {
       const linked = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
       if (linked?.textContent?.trim()) return linked.textContent.trim();
@@ -53,23 +53,34 @@ function buildContext(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectEle
       if (texts.length) return texts.join(' ');
     }
 
-    // 3. Walk up DOM — find a label/legend that is NOT an ancestor of the input
-    let node: Element | null = el.parentElement;
-    for (let depth = 0; depth < 8 && node; depth++) {
-      const candidates = Array.from(
-        node.querySelectorAll('label, legend, [class*="label" i], [class*="Label"]'),
-      ).filter(c => !c.contains(el) && c.textContent?.trim());
-
-      if (candidates.length > 0) {
-        // Prefer the LAST candidate (closest to input in source order)
-        return candidates[candidates.length - 1].textContent!.trim();
+    // 3. Walk up the tree. At each level check PREVIOUS SIBLINGS for text content.
+    //    This works on ALL ATS (Ashby, Greenhouse, Lever, Workday, iCIMS) regardless
+    //    of class names, because the label is always the sibling that precedes the input.
+    let node: Element | null = el;
+    for (let depth = 0; depth < 6; depth++) {
+      // Check previous siblings at this level
+      let sib = node.previousElementSibling;
+      while (sib) {
+        const text = sib.textContent?.trim() ?? '';
+        // Must have text, must be short (not another form field's container), must not contain an input
+        if (text && text.length < 200 && !sib.querySelector('input, textarea, select')) {
+          return text;
+        }
+        sib = sib.previousElementSibling;
       }
+      if (!node.parentElement) break;
       node = node.parentElement;
     }
 
-    // 4. Previous sibling
-    const prev = el.previousElementSibling;
-    if (prev?.textContent?.trim()) return prev.textContent.trim();
+    // 4. Fallback: look for any <label> element in the nearest common ancestor
+    let ancestor: Element | null = el.parentElement;
+    for (let depth = 0; depth < 4 && ancestor; depth++) {
+      const label = ancestor.querySelector('label');
+      if (label && !label.contains(el) && label.textContent?.trim()) {
+        return label.textContent.trim();
+      }
+      ancestor = ancestor.parentElement;
+    }
 
     return '';
   }
