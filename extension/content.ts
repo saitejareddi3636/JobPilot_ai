@@ -1,112 +1,112 @@
-// Content script — injected into every job page.
-// Listens for FILL_FORM messages from the popup and fills matched fields.
+// Content script — injected into every tab.
+// Listens for FILL_FORM / DETECT_FIELDS messages from the popup.
 
 interface Profile {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
   phone: string;
-  location: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+  currentTitle: string;
+  yearsExperience: number;
+  workAuthorization: string;
+  salaryExpectation: string;
+  noticePeriod: string;
   linkedin: string;
   github: string;
   portfolio: string;
-  workAuthorization: string;
-  yearsExperience: number;
+  twitter: string;
 }
 
 // ─── Field matching ───────────────────────────────────────────────────────────
 
-function getFieldValue(input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, profile: Profile): string | null {
-  const attr = [
-    input.name,
-    input.id,
-    input.getAttribute('autocomplete') ?? '',
-    input.getAttribute('placeholder') ?? '',
-    input.getAttribute('aria-label') ?? '',
-    input.closest('label')?.textContent ?? '',
-    input.closest('[class*="field"]')?.querySelector('label')?.textContent ?? '',
+function getFieldValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, p: Profile): string | null {
+  const ctx = [
+    el.name,
+    el.id,
+    el.getAttribute('autocomplete') ?? '',
+    el.getAttribute('placeholder') ?? '',
+    el.getAttribute('aria-label') ?? '',
+    el.closest('label')?.textContent ?? '',
+    el.closest('[class*="field"], [class*="form-group"], [class*="input-group"]')?.querySelector('label, [class*="label"]')?.textContent ?? '',
+    el.getAttribute('data-field-type') ?? '',
   ].join(' ').toLowerCase();
 
-  const firstName = profile.name.split(' ')[0] ?? '';
-  const lastName  = profile.name.split(' ').slice(1).join(' ') ?? '';
+  const fullName = `${p.firstName} ${p.lastName}`.trim();
 
-  // Name variants
-  if (/\bfirst[\s_-]?name\b|fname\b|given[\s_-]?name/.test(attr)) return firstName;
-  if (/\blast[\s_-]?name\b|lname\b|surname\b|family[\s_-]?name/.test(attr)) return lastName;
-  if (/\bfull[\s_-]?name\b|\byour[\s_-]?name\b/.test(attr)) return profile.name;
-  if (/\bname\b/.test(attr) && !/company|org|school|university|employer/.test(attr)) return profile.name;
+  // ── Name ──
+  if (/\bfirst[\s_-]?name\b|fname\b|given[\s_-]?name\b|forename/.test(ctx))   return p.firstName;
+  if (/\blast[\s_-]?name\b|lname\b|surname\b|family[\s_-]?name\b/.test(ctx))  return p.lastName;
+  if (/\bfull[\s_-]?name\b|\byour[\s_-]?name\b|\bapplicant[\s_-]?name/.test(ctx)) return fullName;
+  if (/\bname\b/.test(ctx) && !/company|org|school|university|employer|manager|recruiter/.test(ctx)) return fullName;
 
-  // Contact
-  if (/\bemail\b/.test(attr)) return profile.email;
-  if (/\bphone\b|\bmobile\b|\btel\b|\bcell\b/.test(attr)) return profile.phone;
+  // ── Contact ──
+  if (/\bemail\b/.test(ctx)) return p.email;
+  if (/\bphone\b|\bmobile\b|\btel\b|\bcell\b/.test(ctx)) return p.phone;
 
-  // Location
-  if (/\bcity\b|\blocation\b|\baddress\b/.test(attr) && !/street|line[12]|apt/.test(attr)) return profile.location;
+  // ── Location ──
+  if (/\bcity\b/.test(ctx))     return p.city;
+  if (/\bstate\b|\bprovince\b/.test(ctx)) return p.state;
+  if (/\bzip\b|\bpostal\b/.test(ctx))     return p.zipCode;
+  if (/\bcountry\b/.test(ctx))  return p.country;
+  if (/\blocation\b/.test(ctx) && !/job|work|remote/.test(ctx)) return `${p.city}, ${p.state}`;
 
-  // Links
-  if (/linkedin/.test(attr)) return profile.linkedin;
-  if (/github/.test(attr)) return profile.github;
-  if (/portfolio|personal\s*site|website|url/.test(attr) && !/linkedin|github|company/.test(attr)) return profile.portfolio;
+  // ── Links ──
+  if (/linkedin/.test(ctx))   return p.linkedin;
+  if (/github/.test(ctx))     return p.github;
+  if (/\btwitter\b|\btwitterurl\b/.test(ctx)) return p.twitter;
+  if (/portfolio|personal[\s_-]?site|website|personal[\s_-]?url/.test(ctx) && !/linkedin|github|company/.test(ctx)) return p.portfolio;
 
-  // Work auth / visa
-  if (/work[\s_-]?auth|authorized|visa|sponsorship/.test(attr)) return profile.workAuthorization;
-
-  // Years of experience
-  if (/years?[\s_-]?(of[\s_-]?)?exp/.test(attr)) return String(profile.yearsExperience);
+  // ── Experience / work ──
+  if (/work[\s_-]?auth|authorized[\s_-]?to[\s_-]?work|visa|sponsorship/.test(ctx)) return p.workAuthorization;
+  if (/years?[\s_-]?(of[\s_-]?)?exp/.test(ctx)) return String(p.yearsExperience);
+  if (/\btitle\b|current[\s_-]?role|current[\s_-]?position/.test(ctx) && !/job[\s_-]?title[\s_-]?(applied|seeking)/.test(ctx)) return p.currentTitle;
+  if (/salary|compensation|pay[\s_-]?expect/.test(ctx)) return p.salaryExpectation;
+  if (/notice[\s_-]?period|start[\s_-]?date|available[\s_-]?to[\s_-]?start/.test(ctx)) return p.noticePeriod;
 
   return null;
 }
 
-// ─── Fill a single element ────────────────────────────────────────────────────
+// ─── Fill single element ──────────────────────────────────────────────────────
 
 function fillElement(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
-  // React / Vue track value via nativeInputValueSetter
-  const nativeSetter = Object.getOwnPropertyDescriptor(
-    el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype,
-    'value',
-  )?.set;
+  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+  if (setter) setter.call(el, value);
+  else el.value = value;
 
-  if (nativeSetter) {
-    nativeSetter.call(el, value);
-  } else {
-    el.value = value;
-  }
-
-  // Dispatch events so framework state updates
   el.dispatchEvent(new Event('input',  { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
   el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
 }
 
-// ─── Main fill function ───────────────────────────────────────────────────────
+// ─── Fill / detect ────────────────────────────────────────────────────────────
 
-function fillForm(profile: Profile): { filled: number; skipped: number } {
-  const selectors = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select';
-  const fields = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selectors));
+const SEL = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=image]), textarea, select';
 
+function fillForm(p: Profile) {
   let filled = 0;
-  let skipped = 0;
-
-  for (const el of fields) {
-    if ((el as HTMLInputElement).readOnly || el.disabled) { skipped++; continue; }
-
-    const value = getFieldValue(el, profile);
-    if (!value) { skipped++; continue; }
-
+  for (const el of Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))) {
+    if (el.disabled || (el as HTMLInputElement).readOnly) continue;
+    const value = getFieldValue(el, p);
+    if (!value) continue;
     fillElement(el, value);
-    el.style.outline = '2px solid #7c3aed';
-    el.style.outlineOffset = '1px';
+    el.style.outline       = '2px solid #7c3aed';
+    el.style.outlineOffset = '2px';
+    el.style.borderRadius  = '4px';
     filled++;
   }
-
-  return { filled, skipped };
+  return filled;
 }
 
-// ─── Count detectable fields ─────────────────────────────────────────────────
-
-function detectFields(profile: Profile): number {
-  const selectors = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]), textarea, select';
-  const fields = Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selectors));
-  return fields.filter(el => !el.disabled && !(el as HTMLInputElement).readOnly && getFieldValue(el, profile) !== null).length;
+function detectFields(p: Profile): number {
+  return Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))
+    .filter(el => !el.disabled && !(el as HTMLInputElement).readOnly && getFieldValue(el, p) !== null)
+    .length;
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
@@ -122,9 +122,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
   if (msg.type === 'FILL_FORM') {
     chrome.storage.local.get('jobpilot_profile', ({ jobpilot_profile }) => {
-      if (!jobpilot_profile) { sendResponse({ ok: false, error: 'No profile saved' }); return; }
-      const result = fillForm(jobpilot_profile as Profile);
-      sendResponse({ ok: true, ...result });
+      if (!jobpilot_profile) { sendResponse({ ok: false }); return; }
+      const filled = fillForm(jobpilot_profile as Profile);
+      sendResponse({ ok: true, filled });
     });
     return true;
   }
