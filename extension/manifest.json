@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "JobPilot AI",
+  "version": "1.0.0",
+  "description": "Fill job applications faster with AI-powered autofill",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "JobPilot AI"
+  },
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*/*"
+  ]
+}
