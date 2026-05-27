@@ -1,119 +1,98 @@
 // Content script — injected into every tab.
-// Listens for FILL_FORM / DETECT_FIELDS messages from the popup.
+// Uses the same matchField logic verified by 107 unit tests.
+import { matchField } from './fieldMatcher';
+import type { Profile, FieldContext } from './fieldMatcher';
 
-interface Profile {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  city: string;
-  state: string;
-  zipCode: string;
-  country: string;
-  currentTitle: string;
-  yearsExperience: number;
-  workAuthorization: string;
-  salaryExpectation: string;
-  noticePeriod: string;
-  linkedin: string;
-  github: string;
-  portfolio: string;
-  twitter: string;
-}
+// ─── Collect all context signals for an input ─────────────────────────────────
 
-// ─── Field matching ───────────────────────────────────────────────────────────
-
-function getFieldValue(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, p: Profile): string | null {
-  // Walk up the DOM to find the closest label text (handles Ashby, Greenhouse, Lever)
-  function nearestLabel(node: Element): string {
-    let cur: Element | null = node;
-    for (let i = 0; i < 6; i++) {
-      if (!cur) break;
-      const label = cur.querySelector('label, [class*="label"], [class*="Label"]');
-      if (label?.textContent) return label.textContent;
-      cur = cur.parentElement;
-    }
-    // Also check for a <label for="id"> pointing at this element
+function buildContext(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): FieldContext {
+  // Walk up to find the nearest label that is NOT an ancestor of this input
+  function findLabelText(): string {
+    // 1. <label for="id">
     if (el.id) {
-      const linked = document.querySelector(`label[for="${el.id}"]`);
-      if (linked?.textContent) return linked.textContent;
+      const linked = document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+      if (linked?.textContent?.trim()) return linked.textContent.trim();
     }
+
+    // 2. aria-labelledby → referenced element text
+    const lbId = el.getAttribute('aria-labelledby');
+    if (lbId) {
+      const texts = lbId.split(/\s+/).map(id => document.getElementById(id)?.textContent?.trim()).filter(Boolean);
+      if (texts.length) return texts.join(' ');
+    }
+
+    // 3. Walk up DOM — find first label/legend/heading that is a sibling or parent-container descendant
+    let node: Element | null = el.parentElement;
+    for (let depth = 0; depth < 8 && node; depth++) {
+      const candidates = Array.from(
+        node.querySelectorAll('label, legend, [class*="label" i], [class*="Label"]'),
+      ).filter(candidate => !candidate.contains(el));
+
+      if (candidates.length > 0) {
+        return candidates[candidates.length - 1].textContent?.trim() ?? '';
+      }
+      node = node.parentElement;
+    }
+
+    // 4. Immediately preceding sibling text node or element
+    const prev = el.previousElementSibling;
+    if (prev?.textContent?.trim()) return prev.textContent.trim();
+
     return '';
   }
 
-  const ctx = [
-    el.name,
-    el.id,
-    el.getAttribute('autocomplete') ?? '',
-    el.getAttribute('placeholder') ?? '',
-    el.getAttribute('aria-label') ?? '',
-    el.getAttribute('aria-labelledby')
-      ? document.getElementById(el.getAttribute('aria-labelledby')!)?.textContent ?? ''
-      : '',
-    nearestLabel(el),
-    el.getAttribute('data-field-type') ?? '',
-    el.getAttribute('data-qa') ?? '',
-    el.getAttribute('data-testid') ?? '',
-  ].join(' ').toLowerCase();
-
-  const fullName = `${p.firstName} ${p.lastName}`.trim();
-
-  // ── Name ──
-  if (/\bfirst[\s_-]?name\b|fname\b|given[\s_-]?name\b|forename/.test(ctx))   return p.firstName;
-  if (/\blast[\s_-]?name\b|lname\b|surname\b|family[\s_-]?name\b/.test(ctx))  return p.lastName;
-  if (/\bfull[\s_-]?name\b|\byour[\s_-]?name\b|\bapplicant[\s_-]?name/.test(ctx)) return fullName;
-  if (/\bname\b/.test(ctx) && !/company|org|school|university|employer|manager|recruiter/.test(ctx)) return fullName;
-
-  // ── Contact ──
-  if (/\bemail\b/.test(ctx)) return p.email;
-  if (/\bphone\b|\bmobile\b|\btel\b|\bcell\b/.test(ctx)) return p.phone;
-
-  // ── Location ──
-  if (/\bcity\b/.test(ctx))     return p.city;
-  if (/\bstate\b|\bprovince\b/.test(ctx)) return p.state;
-  if (/\bzip\b|\bpostal\b/.test(ctx))     return p.zipCode;
-  if (/\bcountry\b/.test(ctx))  return p.country;
-  if (/\blocation\b/.test(ctx) && !/job|work|remote/.test(ctx)) return `${p.city}, ${p.state}`;
-
-  // ── Links ──
-  if (/linkedin/.test(ctx))   return p.linkedin;
-  if (/github/.test(ctx))     return p.github;
-  if (/\btwitter\b|\btwitterurl\b/.test(ctx)) return p.twitter;
-  if (/portfolio|personal[\s_-]?site|website|personal[\s_-]?url/.test(ctx) && !/linkedin|github|company/.test(ctx)) return p.portfolio;
-
-  // ── Experience / work ──
-  if (/work[\s_-]?auth|authorized[\s_-]?to[\s_-]?work|visa|sponsorship/.test(ctx)) return p.workAuthorization;
-  if (/years?[\s_-]?(of[\s_-]?)?exp/.test(ctx)) return String(p.yearsExperience);
-  if (/\btitle\b|current[\s_-]?role|current[\s_-]?position/.test(ctx) && !/job[\s_-]?title[\s_-]?(applied|seeking)/.test(ctx)) return p.currentTitle;
-  if (/salary|compensation|pay[\s_-]?expect/.test(ctx)) return p.salaryExpectation;
-  if (/notice[\s_-]?period|start[\s_-]?date|available[\s_-]?to[\s_-]?start/.test(ctx)) return p.noticePeriod;
-
-  return null;
+  return {
+    name:         el.name ?? '',
+    id:           el.id ?? '',
+    placeholder:  el.getAttribute('placeholder') ?? '',
+    autocomplete: el.getAttribute('autocomplete') ?? '',
+    ariaLabel:    el.getAttribute('aria-label') ?? '',
+    labelText:    findLabelText(),
+    type:         (el as HTMLInputElement).type ?? 'text',
+  };
 }
 
-// ─── Fill single element ──────────────────────────────────────────────────────
+// ─── Fill a single element (React / Vue / Angular safe) ───────────────────────
 
 function fillElement(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement, value: string) {
-  const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+  el.focus();
+
+  const proto = el instanceof HTMLTextAreaElement
+    ? HTMLTextAreaElement.prototype
+    : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
   if (setter) setter.call(el, value);
   else el.value = value;
 
-  el.dispatchEvent(new Event('input',  { bubbles: true }));
-  el.dispatchEvent(new Event('change', { bubbles: true }));
-  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-  el.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+  ['input', 'change', 'keyup', 'blur'].forEach(type =>
+    el.dispatchEvent(new Event(type, { bubbles: true })),
+  );
 }
 
 // ─── Fill / detect ────────────────────────────────────────────────────────────
 
-const SEL = 'input:not([type=hidden]):not([type=submit]):not([type=button]):not([type=checkbox]):not([type=radio]):not([type=file]):not([type=image]), textarea, select';
+const SEL = [
+  'input:not([type=hidden]):not([type=submit]):not([type=button])',
+  'input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=image])',
+  'textarea',
+  'select',
+].join(', ');
 
-function fillForm(p: Profile) {
+// Deduplicate selector — querySelectorAll with comma selectors can return dupes
+function getFields(root: Document | Element = document) {
+  const seen = new Set<Element>();
+  return Array.from(root.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))
+    .filter(el => {
+      if (seen.has(el)) return false;
+      seen.add(el);
+      return !el.disabled && !(el as HTMLInputElement).readOnly;
+    });
+}
+
+function fillForm(profile: Profile): number {
   let filled = 0;
-  for (const el of Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))) {
-    if (el.disabled || (el as HTMLInputElement).readOnly) continue;
-    const value = getFieldValue(el, p);
+  for (const el of getFields()) {
+    const value = matchField(buildContext(el), profile);
     if (!value) continue;
     fillElement(el, value);
     el.style.outline       = '2px solid #7c3aed';
@@ -124,10 +103,8 @@ function fillForm(p: Profile) {
   return filled;
 }
 
-function detectFields(p: Profile): number {
-  return Array.from(document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(SEL))
-    .filter(el => !el.disabled && !(el as HTMLInputElement).readOnly && getFieldValue(el, p) !== null)
-    .length;
+function detectFields(profile: Profile): number {
+  return getFields().filter(el => matchField(buildContext(el), profile) !== null).length;
 }
 
 // ─── Message listener ─────────────────────────────────────────────────────────
